@@ -1,105 +1,82 @@
 # Diskreter PID-Regler in C
 
-Ein kleines C11-Beispiel für einen PID-Regler mit Stellgrößenbegrenzung und
-einfacher Anti-Windup-Korrektur. Das Programm simuliert eine PT1-ähnliche
-Strecke und schreibt den Verlauf in `simulation.csv`.
+[![Tests](https://github.com/nabwei/pid_regler_c_main/actions/workflows/tests.yml/badge.svg)](https://github.com/nabwei/pid_regler_c_main/actions/workflows/tests.yml)
 
-## Implementierung
+C11-Lehrbeispiel: ein begrenzter PID-Regler steuert eine synthetische Strecke
+erster Ordnung. `simulation.csv` enthält den Verlauf. Keine Hardwarevalidierung.
+Die Überarbeitung, Tests und Dokumentation entstanden mit KI-Unterstützung.
 
-Der vollständige Quellcode liegt in
-[`pid_min_project/pid_min.c`](pid_min_project/pid_min.c).
-`pid_update()` berechnet aus Sollwert und Messwert:
+## Bauen und prüfen
 
-- den proportionalen Anteil des Regelfehlers,
-- den Integralanteil mit der Trapezregel,
-- den Differentialanteil aus aktuellem und vorherigem Fehler,
-- eine auf `u_min` und `u_max` begrenzte Stellgröße.
+Im Repository-Stamm, mit GCC und Python 3.12:
 
-Die Differenz zwischen begrenzter und unbegrenzter Stellgröße wird zum
-Integrator addiert. Diese einfache Anti-Windup-Korrektur verwendet einen
-festen Faktor von 1.
-
-`main()` setzt `kp = 2`, `ki = 1`, `kd = 0.1`, `ts = 0.01` Sekunden und
-Stellgrößengrenzen von 0 bis 5. Der Sollwert springt bei einer Sekunde von
-0 auf 1. Die simulierte Strecke hat eine Zeitkonstante von 0.5 Sekunden:
-
-```text
-a = exp(-ts / 0.5)
-y_next = a * y + (1 - a) * u
+```sh
+mkdir -p build
+gcc -O2 -Wall -Wextra -Werror -std=c11 pid_min_project/pid_min.c -o build/pid_min -lm
+gcc -O2 -Wall -Wextra -Werror -std=c11 tests/check_controller.c -o build/check_controller -lm
+./build/check_controller
+./build/pid_min
+python tests/check_step.py simulation.csv
 ```
+
+Unter Windows mit MinGW GCC dieselben Befehle verwenden; die Binärdateien haben
+die Endung `.exe`. In PowerShell den Ordner mit `mkdir build` anlegen.
+Die CI führt diese Prüfungen auf Ubuntu aus.
+
+## Regelgesetz und Fehlerkorrektur
+
+[`pid_update()`](pid_min_project/pid_min.c) verwendet P auf dem Fehler,
+trapezförmige Integration und eine Rückwärtsdifferenz der Messgröße für D.
+Ein Sollwertsprung erzeugt deshalb keinen D-Kick.
+
+Conditional Integration verwirft nur den aktuellen I-Zuwachs, wenn er eine
+überschrittene Stellgrenze weiter belasten würde. Bei entgegengesetztem Vorzeichen
+darf sich der Integrator abbauen. P oder D werden nicht in den Integrator geschrieben.
+Dies ersetzt die vorherige unskalierte Rückrechnung des gesamten Ausgangsfehlers.
+
+Die Parameter bleiben `kp=2`, `ki=1`, `kd=0.1`, `ts=0.01 s`, Grenzen `[0,5]`.
+Der Sollwert springt bei 1 s von 0 auf 1. Die Strecke hat Verstärkung 1 und
+Zeitkonstante 0.5 s: `y_next = exp(-ts/0.5)*y + (1-exp(-ts/0.5))*u`.
+Die Simulation läuft jetzt bis 12 s; die Parameter wurden nicht passend zum Test verändert.
+
+## Automatisierte Regression
+
+Der C-Test prüft fehlenden D-Kick, beide Integrationssperren und Abbau eines
+bereits hohen Integrators trotz Ausgangssättigung. Der Python-Test prüft die CSV:
+
+- 1201 endliche Datenzeilen, Zeitraster 0.01 s und korrekten Sollwertsprung;
+- Ausgangsgrenzen `[0,5]`, keine Bewegung vor dem Sprung;
+- Integrator beim Sprung mindestens -1, Überschwingen höchstens 10 Prozent;
+- Ausgang ab 10 s bis zum Simulationsende dauerhaft innerhalb von 2 Prozent des Sollwerts.
+
+Im ausgeführten synthetischen GCC-Lauf am 20.10.2026: `y(6s)=0.949675`,
+`y(10s)=0.988045`, `y(12s)=0.994173`. Das sind Ergebnisse dieses Modells,
+keine allgemeine Regler-Leistungsspezifikation. Der frühere Lauf lieferte bei
+6 s etwa 0.895665; die frühere Prüfung auf lediglich positiven Ausgang war unzureichend.
+
+CSV-Spalten: `t,r,y,u,integrator`. Jede Zeile enthält die Stellgröße zur Zeit `t`,
+aber bereits den anschließend aktualisierten Streckenausgang. Dieser Versatz
+um einen Schritt bleibt beim Vergleich mit anderen Simulationen zu beachten.
+Der Lauf überschreibt `simulation.csv` im aktuellen Verzeichnis.
 
 ## Reglerentwurf und MATLAB/Simulink
 
-Dieses Repository enthält die C-Implementierung und ihre Simulation.
-Der Reglerentwurf wurde ursprünglich im Rahmen eines Laborprojekts mit
-MATLAB/Simulink bearbeitet.
-MATLAB-Skripte, Simulink-Modelle und eine Herleitung der eingestellten
-Reglerparameter sind hier nicht enthalten. Ein Abgleich der C-Ergebnisse
-mit MATLAB/Simulink ist in diesem Repository nicht dokumentiert.
+Der ursprüngliche Entwurf wurde im Rahmen eines Laborprojekts mit MATLAB/Simulink
+bearbeitet. Modelle, Parametersynthese und ein C/Simulink-Abgleich sind hier nicht
+enthalten; ein solcher Abgleich wird nicht als geprüft dargestellt.
 
-## Bauen und ausführen
+## Limitations
 
-Voraussetzung ist ein C-Compiler mit C11-Unterstützung.
+- Nur eine deterministische Modellstrecke, keine Stabilitäts- oder Robustheitsgarantie.
+- Kein D-Filter; Messrauschen kann den Differentialanteil verstärken.
+- Positive sinnvolle Abtastzeit und passende, endliche Parameter werden vorausgesetzt.
+- Keine Echtzeit-, Embedded- oder Hardwareintegration.
+- Der Schrittversuch allein validiert keinen allgemeinen Reglerentwurf.
 
-### GCC unter Linux
+## English summary
 
-Im Repository-Hauptverzeichnis:
-
-```sh
-cd pid_min_project
-gcc -O2 -Wall -Wextra -std=c11 pid_min.c -o pid_min -lm
-./pid_min
-```
-
-Dieser GCC-Befehl wurde bei der unten beschriebenen Prüfung nicht ausgeführt.
-
-### MSVC unter Windows
-
-In einer **x64 Native Tools Command Prompt for Visual Studio 2022**,
-ausgehend vom Repository-Hauptverzeichnis:
-
-```bat
-cd pid_min_project
-cl /nologo /W4 /std:c11 pid_min.c /Fe:pid_min.exe
-pid_min.exe
-```
-
-Das Programm erzeugt beziehungsweise überschreibt `simulation.csv` im
-aktuellen Arbeitsverzeichnis. Die Spalten sind `t,r,y,u`: Simulationszeit,
-Sollwert, Streckenausgang und Stellgröße.
-
-**Zeitzuordnung:** Jede Zeile enthält die Zeit `t` und die dafür berechnete
-Stellgröße `u`, aber bereits den anschließend aktualisierten Streckenausgang
-`y_next`. Beim Vergleich mit anderen Simulationen ist dieser Versatz von
-einem Simulationsschritt zu beachten.
-
-## Bisherige Prüfung
-
-Am 20.10.2026 wurde die unveränderte C-Datei unter Windows mit dem oben
-gezeigten MSVC-Befehl gebaut und ausgeführt. Der Compiler meldete dabei keine
-Warnungen. Die erzeugte CSV-Datei wurde anschließend mit Python geprüft:
-
-- Spalten `t,r,y,u` und ausschließlich endliche Zahlenwerte;
-- Stellgröße durchgehend zwischen 0 und 5;
-- Sollwert 0 vor einer Sekunde, anschließend 1;
-- Zeitabstände von 0.01 Sekunden mit einer Prüftoleranz von 0.00001 Sekunden;
-- Streckenausgang und Stellgröße vor dem Sollwertsprung gleich 0;
-- positiver Streckenausgang am Ende der Simulation.
-
-Der Lauf erzeugte 601 Datenzeilen mit einem letzten Zeitstempel von
-6 Sekunden. Diese Prüfung ist ein einfacher Funktionstest. Eine
-automatisierte Testsuite und CI sind bisher nicht Bestandteil des Repositorys.
-
-## Grenzen
-
-- Demonstration mit einer simulierten Strecke; keine Hardwarevalidierung.
-- Kein Nachweis von Stabilität, optimaler Parametrierung oder Robustheit.
-- Keine Filterung des Differentialanteils; Sollwertsprünge wirken auch auf ihn.
-- Keine vollständige Prüfung ungültiger Parameter oder nicht endlicher Eingaben.
-- `ts` muss sinnvoll und positiv gewählt werden. Der Schutz im Nenner des
-  Differentialanteils ersetzt keine Parameterprüfung.
-- Keine Echtzeit- oder Embedded-Integration.
-
-## Lizenz
-
-[MIT](LICENSE), Copyright (c) 2026 Nabwei Elfakhrany.
+A synthetic C11 PID example with output limits, conditional integration and
+derivative on measurement. Controller checks and CSV regression run in CI.
+With unchanged gains, the declared test requires a 2-percent band from 10 s
+through 12 s, not 98 percent at 6 s. The revision, tests and documentation used
+AI assistance. No hardware or Simulink-equivalence claim. [MIT](LICENSE).

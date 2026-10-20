@@ -1,20 +1,4 @@
-# Local build products
-build/
-pid_min
-pid_min.exe
-*.o
-*.obj
-*.exe
-*.out
-*.pdb
-*.ilk
-
-# Generated simulation output
 simulation.csv
-
-# Editor and operating-system files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+build/
 __pycache__/
+*.exe
