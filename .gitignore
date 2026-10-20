@@ -1,4 +1,20 @@
-simulation.csv
+# Local build products
 build/
-__pycache__/
+pid_min
+pid_min.exe
+*.o
+*.obj
 *.exe
+*.out
+*.pdb
+*.ilk
+
+# Generated simulation output
+simulation.csv
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+__pycache__/
